@@ -1,0 +1,14 @@
+services:
+  vigia:
+    build: .
+    container_name: vigia
+    ports:
+      - "8000:8000"
+    volumes:
+      - vigia_dados:/vigia/dados
+    env_file:
+      - .env
+    restart: unless-stopped
+
+volumes:
+  vigia_dados:

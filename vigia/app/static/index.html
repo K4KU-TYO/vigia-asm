@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VIGIA :: Sentinela de Superfície de Ataque</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-void: #0a0d0a;
+    --bg-panel: #10140f;
+    --bg-panel-alt: #141a10;
+    --border: #253321;
+    --text-primary: #d7ead0;
+    --text-dim: #5c6b55;
+    --accent: #ffb000;       /* âmbar fósforo - cor de assinatura */
+    --accent-dim: #7a5800;
+    --ok-novo: #39ff6a;      /* verde só pra ativos NOVOS */
+    --alerta-removido: #ff4444; /* vermelho só pra ativos REMOVIDOS */
+    --font-display: 'Share Tech Mono', monospace;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  *{ box-sizing: border-box; margin:0; padding:0; }
+
+  body{
+    background: var(--bg-void);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    min-height: 100vh;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  /* textura sutil de CRT - scanlines */
+  body::before{
+    content:"";
+    position: fixed; inset:0;
+    pointer-events:none;
+    background: repeating-linear-gradient(
+      to bottom, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px,
+      transparent 1px, transparent 3px
+    );
+    z-index: 999;
+  }
+
+  /* ---------- CABEÇALHO ---------- */
+  header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 14px 22px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, var(--bg-panel), var(--bg-void));
+  }
+  .marca{ display:flex; align-items:center; gap:14px; }
+  .radar{
+    width:34px; height:34px; border-radius:50%;
+    border: 1px solid var(--accent-dim);
+    position: relative; overflow:hidden;
+    background: radial-gradient(circle, rgba(255,176,0,0.08), transparent 70%);
+  }
+  .radar::after{
+    content:"";
+    position:absolute; top:50%; left:50%; width:50%; height:1px;
+    background: linear-gradient(to right, var(--accent), transparent);
+    transform-origin: left center;
+    animation: girar 2.6s linear infinite;
+  }
+  @keyframes girar{ from{ transform: rotate(0deg);} to{ transform: rotate(360deg);} }
+
+  .titulo{ font-family: var(--font-display); font-size: 22px; letter-spacing: 3px; color: var(--accent); }
+  .titulo .cursor{ animation: piscar 1s step-end infinite; }
+  @keyframes piscar{ 50%{ opacity:0; } }
+  .subtitulo{ font-size: 11px; color: var(--text-dim); letter-spacing: 1px; margin-top: 2px; }
+
+  .status-topo{ display:flex; gap:18px; font-size: 11px; color: var(--text-dim); }
+  .status-topo span b{ color: var(--ok-novo); }
+
+  /* ---------- LAYOUT PRINCIPAL ---------- */
+  .layout{ display:grid; grid-template-columns: 280px 1fr; min-height: calc(100vh - 66px); }
+
+  .barra-lateral{
+    border-right: 1px solid var(--border);
+    background: var(--bg-panel);
+    padding: 16px;
+    display:flex; flex-direction:column; gap: 12px;
+  }
+  .barra-lateral h2{ font-size: 12px; color: var(--text-dim); letter-spacing: 2px; font-weight:500; }
+
+  .btn{
+    background: transparent;
+    border: 1px solid var(--accent-dim);
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 9px 12px;
+    cursor: pointer;
+    letter-spacing: 1px;
+    transition: all .15s ease;
+  }
+  .btn:hover{ background: var(--accent); color: #0a0d0a; box-shadow: 0 0 12px rgba(255,176,0,0.35); }
+  .btn.pequeno{ padding: 4px 8px; font-size: 10px; }
+  .btn.perigo{ border-color: #5a1414; color: var(--alerta-removido); }
+  .btn.perigo:hover{ background: var(--alerta-removido); color: #10140f; }
+
+  .lista-alvos{ display:flex; flex-direction:column; gap: 6px; overflow-y:auto; }
+  .item-alvo{
+    border: 1px solid var(--border);
+    background: var(--bg-panel-alt);
+    padding: 10px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: border-color .15s ease;
+  }
+  .item-alvo:hover{ border-color: var(--accent-dim); }
+  .item-alvo.selecionado{ border-color: var(--accent); box-shadow: inset 2px 0 0 var(--accent); }
+  .item-alvo .dominio{ color: var(--text-primary); font-weight: 700; }
+  .item-alvo .meta{ color: var(--text-dim); font-size: 10px; margin-top: 3px; }
+
+  /* ---------- PAINEL PRINCIPAL ---------- */
+  .painel{ padding: 22px; display:flex; flex-direction:column; gap: 18px; }
+  .vazio{ color: var(--text-dim); font-size: 13px; padding: 40px; text-align:center; border: 1px dashed var(--border); }
+
+  .cabecalho-alvo{ display:flex; justify-content:space-between; align-items:center; flex-wrap: wrap; gap: 10px; }
+  .cabecalho-alvo h1{ font-family: var(--font-display); font-size: 20px; color: var(--text-primary); letter-spacing: 1px; }
+  .cabecalho-alvo .dominio-atual{ color: var(--accent); }
+  .acoes{ display:flex; gap: 8px; }
+
+  .grade-resumo{ display:grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap: 10px; }
+  .cartao{ border: 1px solid var(--border); background: var(--bg-panel); padding: 12px; }
+  .cartao .numero{ font-family: var(--font-display); font-size: 26px; }
+  .cartao .rotulo{ font-size: 10px; color: var(--text-dim); letter-spacing: 1px; margin-top: 4px; }
+  .cartao.novo .numero{ color: var(--ok-novo); }
+  .cartao.removido .numero{ color: var(--alerta-removido); }
+  .cartao.total .numero{ color: var(--accent); }
+
+  table{ width:100%; border-collapse: collapse; font-size: 12px; }
+  thead th{ text-align:left; color: var(--text-dim); font-weight:500; padding: 8px; border-bottom: 1px solid var(--border); letter-spacing: 1px; }
+  tbody td{ padding: 8px; border-bottom: 1px solid var(--border); }
+  tbody tr:hover{ background: var(--bg-panel-alt); }
+  .tag{ font-size: 10px; padding: 2px 6px; border: 1px solid; letter-spacing: 1px; }
+  .tag.novo{ color: var(--ok-novo); border-color: var(--ok-novo); }
+  .tag.removido{ color: var(--alerta-removido); border-color: var(--alerta-removido); }
+  .tag.igual{ color: var(--text-dim); border-color: var(--border); }
+
+  /* console de log no rodapé */
+  .console{
+    border: 1px solid var(--border); background: #060806;
+    padding: 10px; font-size: 11px; color: var(--ok-novo);
+    height: 140px; overflow-y: auto; white-space: pre-wrap;
+  }
+  .console .linha{ opacity: 0; animation: surgir .2s ease forwards; }
+  @keyframes surgir{ to{ opacity:1; } }
+  .console .linha.dim{ color: var(--text-dim); }
+
+  /* modal simples */
+  .fundo-modal{
+    position: fixed; inset:0; background: rgba(0,0,0,0.7);
+    display:none; align-items:center; justify-content:center; z-index: 1000;
+  }
+  .fundo-modal.aberto{ display:flex; }
+  .modal{ background: var(--bg-panel); border: 1px solid var(--accent-dim); padding: 22px; width: 360px; }
+  .modal h3{ font-family: var(--font-display); color: var(--accent); margin-bottom: 14px; letter-spacing: 1px; }
+  .campo{ margin-bottom: 12px; display:flex; flex-direction:column; gap: 4px; }
+  .campo label{ font-size: 10px; color: var(--text-dim); letter-spacing: 1px; }
+  .campo input{
+    background: var(--bg-void); border: 1px solid var(--border); color: var(--text-primary);
+    font-family: var(--font-mono); padding: 8px; font-size: 12px;
+  }
+  .campo input:focus{ outline: none; border-color: var(--accent); }
+  .modal .acoes-modal{ display:flex; justify-content:flex-end; gap: 8px; margin-top: 16px; }
+
+  ::-webkit-scrollbar{ width: 8px; }
+  ::-webkit-scrollbar-thumb{ background: var(--border); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="marca">
+    <div class="radar"></div>
+    <div>
+      <div class="titulo">VIGIA<span class="cursor">_</span></div>
+      <div class="subtitulo">SENTINELA DE SUPERFÍCIE DE ATAQUE</div>
+    </div>
+  </div>
+  <div class="status-topo" id="status-topo">
+    <span>ALVOS: <b id="contagem-alvos">0</b></span>
+    <span>NOTIFICADORES: <b id="contagem-notificadores">0</b></span>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="barra-lateral">
+    <h2>ALVOS MONITORADOS</h2>
+    <button class="btn" id="btn-novo-alvo">+ NOVO ALVO</button>
+    <div class="lista-alvos" id="lista-alvos"></div>
+  </aside>
+
+  <main class="painel" id="painel-principal">
+    <div class="vazio">Selecione um alvo à esquerda, ou cadastre um novo pra começar a vigiar.</div>
+  </main>
+</div>
+
+<div class="fundo-modal" id="fundo-modal">
+  <div class="modal">
+    <h3>CADASTRAR ALVO</h3>
+    <div class="campo">
+      <label>NOME (identificação livre)</label>
+      <input id="campo-nome" placeholder="ex: Programa Bug Bounty X">
+    </div>
+    <div class="campo">
+      <label>DOMÍNIO RAIZ</label>
+      <input id="campo-dominio" placeholder="ex: exemplo.com">
+    </div>
+    <div class="campo">
+      <label>INTERVALO DE RE-SCAN (minutos)</label>
+      <input id="campo-intervalo" type="number" value="60" min="5">
+    </div>
+    <div class="acoes-modal">
+      <button class="btn pequeno" id="btn-cancelar">CANCELAR</button>
+      <button class="btn pequeno" id="btn-confirmar">CONFIRMAR</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// Estado simples da aplicação (sem framework - só JS puro)
+let alvoSelecionadoId = null;
+
+const el = (id) => document.getElementById(id);
+
+async function api(caminho, opcoes = {}) {
+  const resposta = await fetch(caminho, {
+    headers: { "Content-Type": "application/json" },
+    ...opcoes,
+  });
+  if (!resposta.ok) throw new Error(`Erro ${resposta.status} em ${caminho}`);
+  if (resposta.status === 204) return null;
+  return resposta.json();
+}
+
+function logConsole(texto, dim = false) {
+  const console_ = el("console-log");
+  if (!console_) return;
+  const linha = document.createElement("div");
+  linha.className = "linha" + (dim ? " dim" : "");
+  const hora = new Date().toLocaleTimeString("pt-BR");
+  linha.textContent = `[${hora}] ${texto}`;
+  console_.appendChild(linha);
+  console_.scrollTop = console_.scrollHeight;
+}
+
+async function carregarStatusTopo() {
+  const status = await api("/api/status");
+  el("contagem-notificadores").textContent = status.notificadores_configurados.length;
+}
+
+async function carregarAlvos() {
+  const alvos = await api("/api/alvos");
+  el("contagem-alvos").textContent = alvos.length;
+
+  const lista = el("lista-alvos");
+  lista.innerHTML = "";
+
+  if (alvos.length === 0) {
+    lista.innerHTML = '<div style="color:var(--text-dim);font-size:11px;">Nenhum alvo cadastrado ainda.</div>';
+    return;
+  }
+
+  for (const alvo of alvos) {
+    const item = document.createElement("div");
+    item.className = "item-alvo" + (alvo.id === alvoSelecionadoId ? " selecionado" : "");
+    item.innerHTML = `
+      <div class="dominio">${alvo.dominio}</div>
+      <div class="meta">${alvo.nome} · a cada ${alvo.intervalo_minutos}min</div>
+    `;
+    item.onclick = () => selecionarAlvo(alvo);
+    lista.appendChild(item);
+  }
+}
+
+async function selecionarAlvo(alvo) {
+  alvoSelecionadoId = alvo.id;
+  await carregarAlvos();
+  await renderizarPainel(alvo);
+}
+
+async function renderizarPainel(alvo) {
+  const painel = el("painel-principal");
+  painel.innerHTML = `
+    <div class="cabecalho-alvo">
+      <h1>${alvo.nome} :: <span class="dominio-atual">${alvo.dominio}</span></h1>
+      <div class="acoes">
+        <button class="btn pequeno" id="btn-escanear">EXECUTAR SCAN AGORA</button>
+        <button class="btn pequeno perigo" id="btn-remover">REMOVER ALVO</button>
+      </div>
+    </div>
+
+    <div class="grade-resumo" id="grade-resumo">
+      <div class="cartao total"><div class="numero">--</div><div class="rotulo">TOTAL DE ATIVOS</div></div>
+      <div class="cartao novo"><div class="numero">--</div><div class="rotulo">NOVOS DESDE ÚLTIMO SCAN</div></div>
+      <div class="cartao removido"><div class="numero">--</div><div class="rotulo">REMOVIDOS</div></div>
+    </div>
+
+    <table>
+      <thead>
+        <tr><th>STATUS</th><th>TIPO</th><th>VALOR</th><th>DETALHES</th></tr>
+      </thead>
+      <tbody id="corpo-tabela-diff">
+        <tr><td colspan="4" style="color:var(--text-dim);">Carregando...</td></tr>
+      </tbody>
+    </table>
+
+    <div>
+      <h2 style="font-size:12px;color:var(--text-dim);letter-spacing:2px;margin-bottom:8px;">LOG DE ATIVIDADE</h2>
+      <div class="console" id="console-log"></div>
+    </div>
+  `;
+
+  el("btn-escanear").onclick = () => executarScan(alvo);
+  el("btn-remover").onclick = () => removerAlvo(alvo);
+
+  logConsole(`Alvo carregado: ${alvo.dominio}`, true);
+  await carregarDiff(alvo.id);
+}
+
+async function carregarDiff(alvoId) {
+  const diff = await api(`/api/alvos/${alvoId}/diff`);
+  const total = diff.novos.length + diff.removidos.length + diff.inalterados.length;
+
+  const grade = el("grade-resumo");
+  grade.children[0].querySelector(".numero").textContent = total;
+  grade.children[1].querySelector(".numero").textContent = diff.novos.length;
+  grade.children[2].querySelector(".numero").textContent = diff.removidos.length;
+
+  const corpo = el("corpo-tabela-diff");
+  corpo.innerHTML = "";
+
+  const linhas = [
+    ...diff.novos.map(a => ({ ...a, status: "novo", rotulo: "NOVO" })),
+    ...diff.removidos.map(a => ({ ...a, status: "removido", rotulo: "REMOVIDO" })),
+    ...diff.inalterados.map(a => ({ ...a, status: "igual", rotulo: "INALTERADO" })),
+  ];
+
+  if (linhas.length === 0) {
+    corpo.innerHTML = '<tr><td colspan="4" style="color:var(--text-dim);">Nenhum scan executado ainda. Clique em "EXECUTAR SCAN AGORA".</td></tr>';
+    return;
+  }
+
+  for (const item of linhas) {
+    const tr = document.createElement("tr");
+    const detalhes = formatarMetadados(item.metadados);
+    tr.innerHTML = `
+      <td><span class="tag ${item.status}">${item.rotulo}</span></td>
+      <td>${item.tipo}</td>
+      <td>${item.valor}</td>
+      <td style="color:var(--text-dim);font-size:11px;">${detalhes}</td>
+    `;
+    corpo.appendChild(tr);
+  }
+}
+
+function formatarMetadados(metadados) {
+  if (!metadados) return "";
+  const partes = [];
+  if (metadados.status_code) partes.push(`HTTP ${metadados.status_code}`);
+  if (metadados.titulo) partes.push(`"${metadados.titulo}"`);
+  if (metadados.servidor) partes.push(`server: ${metadados.servidor}`);
+  if (metadados.ip) partes.push(`ip: ${metadados.ip}`);
+  return partes.join(" · ");
+}
+
+async function executarScan(alvo) {
+  const botao = el("btn-escanear");
+  botao.textContent = "ESCANEANDO...";
+  botao.disabled = true;
+
+  logConsole(`Iniciando scan em ${alvo.dominio}...`);
+  try {
+    const resumo = await api(`/api/alvos/${alvo.id}/scan`, { method: "POST" });
+    logConsole(`Scan concluído: ${resumo.total_ativos} ativos encontrados (${resumo.novos} novos, ${resumo.removidos} removidos)`);
+    await carregarDiff(alvo.id);
+  } catch (erro) {
+    logConsole(`Erro ao escanear: ${erro.message}`, true);
+  } finally {
+    botao.textContent = "EXECUTAR SCAN AGORA";
+    botao.disabled = false;
+  }
+}
+
+async function removerAlvo(alvo) {
+  if (!confirm(`Remover "${alvo.dominio}" e todo o histórico de scans?`)) return;
+  await api(`/api/alvos/${alvo.id}`, { method: "DELETE" });
+  alvoSelecionadoId = null;
+  el("painel-principal").innerHTML = '<div class="vazio">Alvo removido. Selecione outro à esquerda.</div>';
+  await carregarAlvos();
+}
+
+// ---------- Modal de novo alvo ----------
+el("btn-novo-alvo").onclick = () => el("fundo-modal").classList.add("aberto");
+el("btn-cancelar").onclick = () => el("fundo-modal").classList.remove("aberto");
+
+el("btn-confirmar").onclick = async () => {
+  const nome = el("campo-nome").value.trim();
+  const dominio = el("campo-dominio").value.trim();
+  const intervalo = parseInt(el("campo-intervalo").value, 10) || 60;
+
+  if (!nome || !dominio) {
+    alert("Preencha nome e domínio.");
+    return;
+  }
+
+  await api("/api/alvos", {
+    method: "POST",
+    body: JSON.stringify({ nome, dominio, intervalo_minutos: intervalo }),
+  });
+
+  el("campo-nome").value = "";
+  el("campo-dominio").value = "";
+  el("fundo-modal").classList.remove("aberto");
+  await carregarAlvos();
+};
+
+// ---------- Inicialização ----------
+(async function iniciar() {
+  await carregarStatusTopo();
+  await carregarAlvos();
+})();
+</script>
+</body>
+</html>
